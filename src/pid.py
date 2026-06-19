@@ -1,29 +1,41 @@
-from typing import List, Tuple
-import math
+import time
 
-class PID:
-    def __init__(self, kp: float, ki : float, kd : float, setpoint: float = 0.0):
+class PIDController:
+    def __init__(self, kp: float, ki: float, kd: float, max_output: float, min_output: float) -> None:
         self.kp = kp
         self.ki = ki
         self.kd = kd
-        self.setpoint = setpoint
+        self.max_output = max_output
+        self.min_output = min_output
+        self.clear()
 
-        self._last_error = 0.0
-        self._integral = 0.0
-        self._derivative = 0.0
+    def clear(self) -> None:
+        self.last_error = 0.0
+        self.integral = 0.0
+        self.last_time = None
 
-    def update(self, measurement: float, dt: float) -> float:
-        error = self.setpoint - measurement
-        self._integral += error * dt
-        self._derivative = (error - self._last_error) / dt if dt > 0 else 0.0
+    def update(self, current_value: float, target_value: float) -> float:
+        current_time = time.time()
+        if self.last_time is None:
+            self.last_time = current_time
+            return 0.0
 
-        output = (self.kp * error) + (self.ki * self._integral) + (self.kd * self._derivative)
+        dt = current_time - self.last_time
+        if dt <= 0.0:
+            return 0.0
 
-        self._last_error = error
+        error = target_value - current_value
+        p_term = self.kp * error
 
-        return output
-    
-    def reset(self):
-        self._last_error = 0.0
-        self._integral = 0.0
-        self._derivative = 0.0
+        self.integral += error * dt
+        i_term = self.ki * self.integral
+        i_term = max(self.min_output, min(self.max_output, i_term))
+
+        derivative = (error - self.last_error) / dt
+        d_term = self.kd * derivative
+
+        output = p_term + i_term + d_term
+        self.last_error = error
+        self.last_time = current_time
+
+        return max(self.min_output, min(self.max_output, output))

@@ -1,104 +1,75 @@
-import cv2 as cv 
+import cv2 as cv
 import numpy as np
-import time
 
 class LEDDetector:
-    def __init__(self, lower_hsv=None, upper_hsv=None, min_area=50) -> None: 
-        """
-        Ініціалізує детектор LED-маяка.
-        :param lower_hsv: Нижня межа кольору в HSV (list або tuple)
-        :param upper_hsv: Верхня межа кольору в HSV (list або tuple)
-        :param min_area: Мінімальна площа в пікселях для відсіювання шуму
-        """
-        # Дефолтні значення для зеленого кольору (з урахуванням можливих засвітів)
-        if lower_hsv is None:
-            self.lower_hsv = np.array([35, 50, 50])
-        else:
-            self.lower_hsv = np.array(lower_hsv)
-            
-        if upper_hsv is None:
-            self.upper_hsv = np.array([90, 255, 255])
-        else:
-            self.upper_hsv = np.array(upper_hsv)
-            
+    def __init__(self, rgba_color: list[float] | tuple[float, ...], min_area: int = 50) -> None: 
         self.min_area = min_area
+        self.rgba_color = rgba_color
+        self.calculate_hsv_bounds()
 
-    def detect(self, frame: np.ndarray) -> tuple[int | None, int | None, float]:
-        """
-        Знаходить LED-маяк на зображенні.
+    def calculate_hsv_bounds(self) -> None:
+        r = int(self.rgba_color[0] * 255)
+        g = int(self.rgba_color[1] * 255)
+        b = int(self.rgba_color[2] * 255)
         
-        :param frame: Зображення у форматі BGR (стандарт OpenCV)
-        :return: Кортеж (center_x, center_y, area). Якщо нічого не знайдено, повертає (None, None, 0.0)
-        """
+        bgr_pixel = np.uint8([[[b, g, r]]])
+        hsv_pixel = cv.cvtColor(bgr_pixel, cv.COLOR_BGR2HSV)[0][0]
+        h, s, v = hsv_pixel[0], hsv_pixel[1], hsv_pixel[2]
+
+        h_tolerance = 10
+        s_tolerance = 150  
+        v_tolerance = 150  
+
+        self.lower_hsv = np.array([max(0, h - h_tolerance), max(50, s - s_tolerance), max(50, v - v_tolerance)])
+        self.upper_hsv = np.array([min(180, h + h_tolerance), 255, 255])
+        
+        self.lower_hsv2, self.upper_hsv2 = None, None
+        if h < h_tolerance:
+            self.lower_hsv2 = np.array([180 - (h_tolerance - h), max(50, s - s_tolerance), max(50, v - v_tolerance)])
+            self.upper_hsv2 = np.array([180, 255, 255])
+        elif h > (180 - h_tolerance):
+            self.lower_hsv2 = np.array([0, max(50, s - s_tolerance), max(50, v - v_tolerance)])
+            self.upper_hsv2 = np.array([h_tolerance - (180 - h), 255, 255])
+
+    def detect(self, frame: np.ndarray, drone_id: int) -> tuple[int | None, int | None, float]:
         if frame is None or frame.size == 0:
             return None, None, 0.0
 
-        # 1. Переводимо кадр у формат HSV
         hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
-        
-        # 2. Створюємо бінарну маску
         mask = cv.inRange(hsv, self.lower_hsv, self.upper_hsv)
         
-        # 3. Прибираємо шум (морфологічні операції)
-        # Erode прибирає дрібні крапки, Dilate повертає розмір основній плямі
+        if self.lower_hsv2 is not None and self.upper_hsv2 is not None:
+            mask2 = cv.inRange(hsv, self.lower_hsv2, self.upper_hsv2)
+            mask = cv.bitwise_or(mask, mask2)
+        
         kernel = np.ones((3, 3), np.uint8)
         mask = cv.erode(mask, kernel, iterations=1)
         mask = cv.dilate(mask, kernel, iterations=2)
         
-        # 4. Шукаємо контури
         contours, _ = cv.findContours(mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
         
+        center_x, center_y, area = None, None, 0.0
+        
         if contours:
-            # Беремо контур з найбільшою площею
             largest_contour = max(contours, key=cv.contourArea)
-            area = cv.contourArea(largest_contour)
+            current_area = cv.contourArea(largest_contour)
             
-            # Перевіряємо, чи це не просто піксельний шум
-            if area > self.min_area:
-                # 5. Рахуємо центр маси контуру (моменти)
+            if current_area > self.min_area:
+                area = current_area
                 M = cv.moments(largest_contour)
                 if M["m00"] != 0:
                     center_x = int(M["m10"] / M["m00"])
                     center_y = int(M["m01"] / M["m00"])
                     
-                    return center_x, center_y, float(area)
-                    
-        # Маяк не знайдено або він занадто малий
-        return None, None, 0.0
+                    # Окреслюємо область
+                    cv.drawContours(frame, [largest_contour], -1, (0, 255, 0), 2)
+                    cv.circle(frame, (center_x, center_y), 5, (0, 0, 255), -1)
+                    cv.putText(frame, f"Area: {int(area)}", (center_x + 10, center_y - 10), 
+                               cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
-# === Приклад використання ===
-if __name__ == "__main__":
-    # Створюємо екземпляр детектора
-    detector = LEDDetector(min_area=80)
-    
-    # Симуляція отримання кадру (замініть на реальне відео або топік ROS)
-    cap = cv.VideoCapture(0)
-    
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-            
-        start_time = time.time()
-        
-        # Викликаємо ваш метод
-        cx, cy, area = detector.detect(frame)
-        
-        fps = 1.0 / (time.time() - start_time)
-        
-        # Візуалізація результату
-        if cx is not None:
-            cv.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
-            cv.putText(frame, f"Area: {area:.1f}", (cx + 10, cy), 
-                       cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-            
-        cv.putText(frame, f"FPS: {fps:.1f}", (10, 20), 
-                   cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
-                   
-        cv.imshow("Drone Camera", frame)
-        
-        if cv.waitKey(1) & 0xFF == ord('q'):
-            break
-            
-    cap.release()
-    cv.destroyAllWindows()
+        # Рендеринг вікон
+        cv.imshow(f"Drone {drone_id} Camera View", frame)
+        cv.imshow(f"Drone {drone_id} Binary Mask", mask)
+        cv.waitKey(1)
+                    
+        return center_x, center_y, float(area)

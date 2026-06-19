@@ -1,0 +1,1 @@
+ros2 run ros_gz_bridge parameter_bridge /world/baylands_custom/model/x500_mono_cam_1/link/mono_cam/base_link/sensor/camera_sensor/image@sensor_msgs/msg/Image[gz.msgs.Image - запустити камеру
