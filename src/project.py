@@ -17,7 +17,7 @@ from drone_sdk import Drone
 from led_detector import LEDDetector
 from pid import PIDController
 
-SWARM_SIZE = 4
+SWARM_SIZE = 3
 ALTITUDE = 5.0  
 FLIGHT_DURATION = 60
 
@@ -27,7 +27,6 @@ COLOR_MATRIX = {
     3: [0.0, 0.0, 0.8, 1.0],  # Дрон 3 шукає Синього дрона (2)
 }
 
-# Зберігаємо [vx, yaw_error_deg]
 drone_targets = {}
 
 def camera_loop(drones: list, shutdown: threading.Event):
@@ -41,7 +40,9 @@ def camera_loop(drones: list, shutdown: threading.Event):
 
     cam_width = 640
     target_cx = cam_width / 2.0  
-    target_area = 250.0  # Компактна площа для утримання чіткої ближньої дистанції
+    
+    # Цільова площа для утримання ближньої дистанції
+    target_area = 250.0  
 
     for d in drones:
         d.start_camera()
@@ -53,9 +54,11 @@ def camera_loop(drones: list, shutdown: threading.Event):
             rgba = COLOR_MATRIX.get(d.drone_id, [0.0, 1.0, 0.0, 1.0])
             detectors[d.drone_id] = LEDDetector(rgba_color=rgba, min_area=25)
             
-            # ЖОРСТКІ КОЕФІЦІЄНТИ: Збільшено в рази для різкого та сильного контролю
+            # Контроль курсу
             pids_yaw[d.drone_id] = PIDController(kp=0.08, ki=0.0, kd=0.01, max_output=30.0, min_output=-30.0)
-            pids_range[d.drone_id] = PIDController(kp=0.008, ki=0.0, kd=0.001, max_output=2.0, min_output=-1.0)
+            
+            # Агресивніший контроль дальності (обмежили рух назад до -0.5, щоб не відлітав)
+            pids_range[d.drone_id] = PIDController(kp=0.025, ki=0.002, kd=0.005, max_output=3.0, min_output=-0.5)
             
             drone_targets[d.drone_id] = [0.0, 0.0]  
             last_seen_time[d.drone_id] = 0.0
@@ -73,12 +76,14 @@ def camera_loop(drones: list, shutdown: threading.Event):
                     cx, cy, area = detectors[d.drone_id].detect(frame, d.drone_id)
                     
                     if cx is not None and cy is not None:
-                        # --- СИЛЬНИЙ КОНТРОЛЬ ПОМИЛКИ ---
-                        # Розраховуємо кутове відхилення в градусах. Знак міняємо, щоб повернути ДО цілі
+                        # Кутова помилка
                         yaw_error_deg = pids_yaw[d.drone_id].update(current_value=target_cx, target_value=cx)
-                        vx = pids_range[d.drone_id].update(current_value=area, target_value=target_area)
                         
-                        # Жодного штучного гальмування летимо на повну силу розрахунку PID
+                        # Гарантований розрахунок знаку лінійної швидкості через пряму різницю площ
+                        area_error = target_area - area
+                        # Передаємо area_error як target_value, а 0.0 як поточне, щоб зафіксувати чистий знак
+                        vx = pids_range[d.drone_id].update(current_value=0.0, target_value=area_error)
+                        
                         good_speeds = [vx, yaw_error_deg]
                         
                         last_speeds[d.drone_id] = good_speeds
@@ -86,7 +91,7 @@ def camera_loop(drones: list, shutdown: threading.Event):
                         drone_targets[d.drone_id] = good_speeds
                         
                     else:
-                        # Тайм-декей при втраті
+                        # Декей при втраті сигналу
                         time_lost = current_time - last_seen_time[d.drone_id]
                         if time_lost < 0.4:
                             drone_targets[d.drone_id] = last_speeds[d.drone_id]
@@ -99,7 +104,7 @@ def camera_loop(drones: list, shutdown: threading.Event):
                         else:
                             pids_yaw[d.drone_id].clear()
                             pids_range[d.drone_id].clear()
-                            drone_targets[d.drone_id] = [0.0, 5.0]  # Агресивний пошуковий розворот (5 градусів/крок)
+                            drone_targets[d.drone_id] = [0.0, 6.0]  # Пошук
 
                 entry = windows[d.drone_id]
                 if not entry['sized']:
@@ -120,7 +125,6 @@ def camera_loop(drones: list, shutdown: threading.Event):
 
 
 async def leader_mission(drone: Drone, stop_event: asyncio.Event, shutdown: asyncio.Event):
-    """Асинхронний круговий маршрут для головного дрона (Матки)"""
     try:
         print("Leader (Drone 0): waiting 20s for EKF2 & GPS lock...")
         await asyncio.sleep(20)
@@ -149,7 +153,6 @@ async def leader_mission(drone: Drone, stop_event: asyncio.Event, shutdown: asyn
 
 
 async def follower_mission(drone: Drone, drone_id: int, stop_event: asyncio.Event, shutdown: asyncio.Event):
-    """Асинхронна місія ведених дронів з миттєвою корекцією курсу"""
     try:
         print(f"Follower {drone_id}: waiting 20s for EKF2 lock...")
         await asyncio.sleep(20)
@@ -167,16 +170,18 @@ async def follower_mission(drone: Drone, drone_id: int, stop_event: asyncio.Even
             vx, yaw_error_deg = speeds
             
             hdg = await drone.heading()
-            
-            # Розраховуємо новий кут як поточний кут + зміщення від PID
             target_heading = (hdg + yaw_error_deg) % 360.0
             
-            # Проектуємо лінійну швидкість на глобальний NED-фрейм
-            yaw_rad = math.radians(hdg)
-            vn = vx * math.cos(yaw_rad)
-            ve = vx * math.sin(yaw_rad)
+            # Динамічний брейк на критичних кутах відхилення
+            if abs(yaw_error_deg) > 10.0:
+                vx *= 0.15
+
+            # Проектуємо лінійну швидкість строго на ціль
+            target_heading_rad = math.radians(target_heading)
+            vn = vx * math.cos(target_heading_rad)
+            ve = vx * math.sin(target_heading_rad)
             
-            print(f"[ДРОН {drone_id}] Помилка пікселів оброблена -> Вперед: {vx:.2f} м/с | Корекція кута на: {yaw_error_deg:.1f}°")
+            print(f"[ДРОН {drone_id}] Рух -> Вперед: {vx:.2f} м/с | Кут на лідера: {target_heading:.1f}°")
             
             await drone.set_velocity(vn, ve, 0.0, yaw_deg=target_heading)
             await asyncio.sleep(0.1)

@@ -1,12 +1,13 @@
 import time
 
 class PIDController:
-    def __init__(self, kp: float, ki: float, kd: float, max_output: float, min_output: float) -> None:
+    def __init__(self, kp: float, ki: float, kd: float, max_output: float, min_output: float, deadband: float = 0.0) -> None:
         self.kp = kp
         self.ki = ki
         self.kd = kd
         self.max_output = max_output
         self.min_output = min_output
+        self.deadband = deadband  # <-- Новий параметр
         self.clear()
 
     def clear(self) -> None:
@@ -17,9 +18,11 @@ class PIDController:
     def update(self, current_value: float, target_value: float) -> float:
         current_time = time.time()
         error = target_value - current_value
+        if abs(error) < self.deadband:
+            error = 0.0
+
         p_term = self.kp * error
 
-        # Фікс: Віддаємо P-сигнал на першому ж кадрі, не чекаючи dt!
         if self.last_time is None:
             self.last_time = current_time
             self.last_error = error
