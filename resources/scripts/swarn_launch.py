@@ -41,9 +41,9 @@ def generate_launch_description():
         )
         # Followers
         followers = [
-                (1, 129.92, 52.852, 1.4),
-                (2, 129.08, 54.095, 1.4),
-                (3, 128.24, 55.339, 1.4)
+                (1, 128.01, 53.32, 1.4), 
+                (2, 129.02, 53.97, 1.4),
+                (3, 130.03, 54.62, 1.4)
         ]
 
         #Delay followers so Gazebo is ready
