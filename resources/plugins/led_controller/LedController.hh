@@ -3,6 +3,7 @@
 #include <gz/sim/System.hh>
 #include <gz/transport/Node.hh>
 #include <gz/msgs/stringmsg.pb.h>
+#include <gz/math/Color.hh>
 #include <chrono>
 #include <mutex>
 #include <string>
@@ -44,11 +45,11 @@ private:
     std::string currentCommand{"ON"};
     bool stateChanged{false};
 
-    // --- NEW TIMING TRACKING VARIABLES ---
     std::chrono::steady_clock::duration lastFlippedSimTime{std::chrono::steady_clock::duration::zero()};
-    std::chrono::steady_clock::duration blinkInterval{std::chrono::milliseconds(50)}; // Default 0.05s (50ms)
+    std::chrono::steady_clock::duration blinkInterval{std::chrono::milliseconds(50)};
     bool internalBlinkState{false};
     std::chrono::steady_clock::duration lastEvaluationSimTime{std::chrono::steady_clock::duration::zero()};
+    gz::math::Color droneColor{0.0f, 1.0f, 0.0f, 1.0f};
 };
 
 } // namespace led_controller

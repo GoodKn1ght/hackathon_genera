@@ -24,6 +24,20 @@ void LedController::Configure(
     if (lastSlash != std::string::npos) {
         modelName = modelName.substr(lastSlash + 1);
     }
+    this->droneColor = gz::math::Color(0.0f, 1.0f, 0.0f, 1.0f); 
+    if (!modelName.empty() && std::isdigit(modelName.back())) {
+        int droneId = modelName.back() - '0';
+        
+        if (droneId == 0) {
+            this->droneColor = gz::math::Color(1.0f, 0.0f, 0.0f, 1.0f);    
+        } else if (droneId == 1) {
+            this->droneColor = gz::math::Color(0.0f, 1.0f, 0.0f, 1.0f);    
+        } else if (droneId == 2) {
+            this->droneColor = gz::math::Color(0.0f, 0.0f, 0.5f, 1.0f);    
+        } else if (droneId == 3) {
+            this->droneColor = gz::math::Color(1.0f, 1.0f, 0.0f, 1.0f);  
+        }
+    }
 
     this->ledVisualEntities.clear();
     std::vector<std::pair<std::string, gz::sim::Entity>> foundLenses;
@@ -55,7 +69,7 @@ void LedController::Configure(
         return;
     }
 
-    gzmsg << "LedController loaded for " << modelName << " with binary string support." << std::endl;
+    gzmsg << "LedController loaded for " << modelName << " with custom drone color support." << std::endl;
 }
 
 void LedController::OnLedCmd(const gz::msgs::StringMsg &_msg)
@@ -95,20 +109,16 @@ void LedController::PreUpdate(
         this->stateChanged = false;
     }
 
-    gz::math::Color greenColor(0.0f, 1.0f, 0.0f, 1.0f);
+    gz::math::Color activeColor = this->droneColor; 
     gz::math::Color offColor(0.0f, 0.0f, 0.0f, 0.0f);
-
-    // --- NEW BINARY MASK PARSER LOGIC ---
     if (cmd.length() == 4 && (cmd[0] == '1' || cmd[0] == '0')) 
     {
-        // Parse individual states based on the binary mask string positions
         for (size_t i = 0; i < this->ledVisualEntities.size() && i < 4; ++i) 
         {
-            gz::math::Color targetedColor = (cmd[i] == '1') ? greenColor : offColor;
+            gz::math::Color targetedColor = (cmd[i] == '1') ? activeColor : offColor;
             this->UpdateVisualState(this->ledVisualEntities[i], targetedColor, _ecm);
         }
     }
-    // --- FALLBACK TO NATIVE STANDARD MACROS ("ON"/"OFF") ---
     else 
     {
         if (cmd == "BLINK") 
@@ -125,7 +135,7 @@ void LedController::PreUpdate(
 
         if (shouldUpdateLenses || cmd == "ON" || cmd == "OFF") 
         {
-            gz::math::Color targetedColor = (cmd == "ON") ? greenColor : offColor;
+            gz::math::Color targetedColor = (cmd == "ON") ? activeColor : offColor;
             for (const auto &visEntity : this->ledVisualEntities) {
                 this->UpdateVisualState(visEntity, targetedColor, _ecm);
             }
