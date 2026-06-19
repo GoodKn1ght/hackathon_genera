@@ -1,0 +1,293 @@
+##############################################
+#         УНІВЕРСАЛЬНИЙ .gitignore           #
+#  Python / C++ / ROS / Gazebo / IDE / OS    #
+##############################################
+
+##### ---------- PYTHON ---------- #####
+
+# Байт-код
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+
+# Віртуальні середовища
+venv/
+.venv/
+env/
+.env/
+ENV/
+env.bak/
+venv.bak/
+*/venv/
+*/.venv/
+.python-version
+pyvenv.cfg
+
+# Дистрибутиви / упаковка
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+wheels/
+sdist/
+pip-wheel-metadata/
+share/python-wheels/
+MANIFEST
+
+# Інсталяційні логи
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Юніт-тести / покриття
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Jupyter
+.ipynb_checkpoints/
+profile_default/
+ipython_config.py
+
+# mypy / pyright / ruff / pytype
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Конфіги середовища
+.env
+.env.*
+*.env
+
+# Cython debug
+cython_debug/
+
+# Poetry / PDM / pipenv
+poetry.lock
+Pipfile.lock
+.pdm.toml
+
+##### ---------- C / C++ ---------- #####
+
+# Об'єктні файли та артефакти компіляції
+*.o
+*.obj
+*.elf
+*.lo
+*.la
+*.lai
+*.slo
+*.gch
+*.pch
+
+# Бібліотеки (статичні / динамічні / плагіни)
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+*.pdb
+*.ilk
+*.exp
+*.idb
+*.map
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+install_manifest.txt
+compile_commands.json
+CMakeUserPresets.json
+_deps/
+Testing/
+
+# Make
+*.d
+*.dep
+*.mk
+Makefile.in
+
+# Ninja
+.ninja_deps
+.ninja_log
+build.ninja
+
+# Conan / vcpkg
+conanbuildinfo.*
+conaninfo.txt
+conan.lock
+.conan/
+vcpkg_installed/
+
+# QtCreator / qmake
+*.pro.user
+*.pro.user.*
+Makefile
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+
+# Precompiled headers / debug symbols
+*.dSYM/
+*.su
+*.idb
+
+##### ---------- ROS / ROS2 ---------- #####
+
+# catkin (ROS1)
+build/
+build_isolated/
+devel/
+devel_isolated/
+install/
+install_isolated/
+logs/
+log/
+.catkin_workspace
+.catkin_tools/
+*.rosinstall
+*.rosinstall.bak
+
+# colcon (ROS2)
+build/
+install/
+log/
+.colcon/
+
+# ROS bag-файли (зазвичай великі — за бажанням розкоментувати)
+# *.bag
+# *.bag.active
+# *.db3
+
+# Згенеровані повідомлення/сервіси
+**/msg_gen/
+**/srv_gen/
+**/*_gen/
+
+##### ---------- Gazebo / Ignition ---------- #####
+
+.gazebo/
+gazebo_logs/
+*.log
+*.gzlog
+*.world~
+*.sdf~
+~/.ignition/
+ignition_logs/
+
+# Кеш моделей/плагінів Gazebo
+build/gazebo/
+**/gazebo_plugins/build/
+
+##### ---------- IDE / РЕДАКТОРИ ---------- #####
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# CLion / IntelliJ
+.idea/
+cmake-build-*/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.opendb
+Debug/
+Release/
+x64/
+x86/
+
+# Eclipse
+.project
+.cproject
+.settings/
+
+# Vim / Emacs
+*.swp
+*.swo
+*~
+\#*\#
+.\#*
+
+##### ---------- ОПЕРАЦІЙНІ СИСТЕМИ ---------- #####
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.directory
+.Trash-*
+
+##### ---------- ІНШІ КЕШІ / ТИМЧАСОВІ ФАЙЛИ ---------- #####
+
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.log
+*.cache
+.cache/
+*.lock
+node_modules/
+.docker/
+*.pid
+*.seed
+*.pid.lock
+
+##### ---------- ДОКУМЕНТАЦІЯ / СКЛАДАННЯ ---------- #####
+
+docs/_build/
+site/
+_site/
+
+##### ---------- АРХІВИ (за потреби) ---------- #####
+
+# *.zip
+# *.tar.gz
+# *.rar
+# *.7z
