@@ -16,16 +16,18 @@ class PIDController:
 
     def update(self, current_value: float, target_value: float) -> float:
         current_time = time.time()
+        error = target_value - current_value
+        p_term = self.kp * error
+
+        # Фікс: Віддаємо P-сигнал на першому ж кадрі, не чекаючи dt!
         if self.last_time is None:
             self.last_time = current_time
-            return 0.0
+            self.last_error = error
+            return max(self.min_output, min(self.max_output, p_term))
 
         dt = current_time - self.last_time
         if dt <= 0.0:
             return 0.0
-
-        error = target_value - current_value
-        p_term = self.kp * error
 
         self.integral += error * dt
         i_term = self.ki * self.integral
