@@ -27,9 +27,8 @@ COLOR_MATRIX = {
     3: [0.0, 0.0, 0.8, 1.0],  # Дрон 3 шукає Синього дрона (2)
 }
 
-# Спільна пам'ять між потоками
-drone_targets = {}     # Формат: [vx, yaw_error_deg, vz]
-drone_pitch_deg = {}   # Зберігає: власний кут тангажу (Pitch) у градусах
+drone_targets = {}     
+drone_pitch_deg = {}   
 
 def camera_loop(drones: list, shutdown: threading.Event):
     windows = {}
@@ -44,15 +43,14 @@ def camera_loop(drones: list, shutdown: threading.Event):
     cam_width = 640
     cam_height = 480
     
-    # Статичні центри
     target_cx = cam_width / 2.0  
     static_cy = cam_height / 2.0
     
-    # Дефолтна фокусна відстань камери Gazebo (при HFov=60, W=640)
     fy_pixels = 554.26  
-    
-    # Цільова площа для утримання ближньої дистанції
     target_area = 250.0  
+    
+    # [НОВЕ] Рахуємо корінь бажаної площі один раз для оптимізації
+    sqrt_target_area = math.sqrt(target_area)
 
     for d in drones:
         d.start_camera()
@@ -64,14 +62,15 @@ def camera_loop(drones: list, shutdown: threading.Event):
             rgba = COLOR_MATRIX.get(d.drone_id, [0.0, 1.0, 0.0, 1.0])
             detectors[d.drone_id] = LEDDetector(rgba_color=rgba, min_area=25)
             
-            # Контроль курсу
-            pids_yaw[d.drone_id] = PIDController(kp=0.08, ki=0.0, kd=0.01, max_output=30.0, min_output=-30.0)
+            # [НОВЕ] Більш м'які Kp, але сильніші Kd для демпфування (щоб дрон не пролітав ціль)
+            pids_yaw[d.drone_id] = PIDController(kp=0.05, ki=0.00, kd=0.02, max_output=25.0, min_output=-25.0)
             
-            # Контроль дальності
-            pids_range[d.drone_id] = PIDController(kp=0.025, ki=0.002, kd=0.005, max_output=3.0, min_output=-0.5)
+            # [НОВЕ] Оскільки ми перейшли на квадратні корені, помилка тепер маленька (від 1 до 20). 
+            # Тому Kp для дальності став більшим (0.3), але сам рух буде ідеально лінійним.
+            pids_range[d.drone_id] = PIDController(kp=0.30, ki=0.001, kd=0.08, max_output=2.5, min_output=-0.5)
             
-            # Контроль ВИСОТИ (нові коефіцієнти для роботи з пікселями)
-            pids_alt[d.drone_id] = PIDController(kp=0.015, ki=0.001, kd=0.005, max_output=1.5, min_output=-1.5)
+            # [НОВЕ] Дуже ніжний контроль висоти, щоб не було мікро-стрибків
+            pids_alt[d.drone_id] = PIDController(kp=0.01, ki=0.00, kd=0.005, max_output=1.0, min_output=-1.0)
             
             drone_targets[d.drone_id] = [0.0, 0.0, 0.0]  
             last_seen_time[d.drone_id] = 0.0
@@ -89,34 +88,29 @@ def camera_loop(drones: list, shutdown: threading.Event):
                     cx, cy, area = detectors[d.drone_id].detect(frame, d.drone_id)
                     
                     if cx is not None and cy is not None:
-                        # 1. Кутова помилка (Yaw)
+                        # 1. Yaw
                         yaw_error_deg = pids_yaw[d.drone_id].update(current_value=target_cx, target_value=cx)
-                        
-                        # 2. Помилка дистанції (Range)
-                        area_error = target_area - area
-                        vx = pids_range[d.drone_id].update(current_value=0.0, target_value=area_error)
-                        
-                        # 3. Помилка ВИСОТИ (Alt) з динамічним таргетом
+                        area_error = sqrt_target_area - math.sqrt(area)
+                        raw_vx = pids_range[d.drone_id].update(current_value=0.0, target_value=area_error)
                         current_pitch = drone_pitch_deg.get(d.drone_id, 0.0)
                         pitch_rad = math.radians(current_pitch)
-                        
-                        # Чесний тригонометричний зсув віртуального горизонту
                         dynamic_target_cy = static_cy + (fy_pixels * math.tan(pitch_rad))
-                        
-                        # Кліпінг, щоб не шукати ціль за межами кадру
                         dynamic_target_cy = max(20.0, min(460.0, dynamic_target_cy))
+                        raw_vz = pids_alt[d.drone_id].update(current_value=cy, target_value=dynamic_target_cy)
+                        alpha = 0.2 
+                        prev_vx, prev_yaw, prev_vz = last_speeds[d.drone_id]
                         
-                        # Розрахунок вертикальної швидкості vz
-                        vz = pids_alt[d.drone_id].update(current_value=cy, target_value=dynamic_target_cy)
+                        smooth_vx = prev_vx + alpha * (raw_vx - prev_vx)
+                        smooth_yaw = prev_yaw + alpha * (yaw_error_deg - prev_yaw)
+                        smooth_vz = prev_vz + alpha * (raw_vz - prev_vz)
                         
-                        good_speeds = [vx, yaw_error_deg, vz]
+                        good_speeds = [smooth_vx, smooth_yaw, smooth_vz]
                         
                         last_speeds[d.drone_id] = good_speeds
                         last_seen_time[d.drone_id] = current_time
                         drone_targets[d.drone_id] = good_speeds
                         
                     else:
-                        # Декей при втраті сигналу
                         time_lost = current_time - last_seen_time[d.drone_id]
                         if time_lost < 0.4:
                             drone_targets[d.drone_id] = last_speeds[d.drone_id]
@@ -132,6 +126,7 @@ def camera_loop(drones: list, shutdown: threading.Event):
                             pids_range[d.drone_id].clear()
                             pids_alt[d.drone_id].clear()
                             drone_targets[d.drone_id] = [0.0, 6.0, 0.0]
+                            last_speeds[d.drone_id] = [0.0, 0.0, 0.0] # Скидаємо інерцію при повній втраті
 
                 entry = windows[d.drone_id]
                 if not entry['sized']:
@@ -195,29 +190,27 @@ async def follower_mission(drone: Drone, drone_id: int, stop_event: asyncio.Even
         while not stop_event.is_set() and not shutdown.is_set():
             hdg = await drone.heading()
             
-            # Читаємо власний нахил (Pitch) для передачі в потік камери
             try:
-                # Зміни назву методу, якщо в SDK він інакший! Зазвичай: roll, pitch, yaw
                 roll_rad, pitch_rad, yaw_rad = await drone.attitude()
                 drone_pitch_deg[drone_id] = math.degrees(pitch_rad)
             except Exception as e:
-                pass # Якщо даних ще немає, камера бере дефолтний 0.0
+                pass 
 
             speeds = drone_targets.get(drone_id, [0.0, 0.0, 0.0])
             vx, yaw_error_deg, vz = speeds
             
             target_heading = (hdg + yaw_error_deg) % 360.0
             
-            # Динамічний брейк на критичних кутах
-            if abs(yaw_error_deg) > 10.0:
-                vx *= 0.15
+            # [НОВЕ] Плавне динамічне гальмування замість жорсткого зрізу
+            # Тепер швидкість спадає по кривій: чим більший кут, тим менша швидкість, 
+            # але без раптових стрибків (мінімум 30% ходу).
+            scale = max(0.3, 1.0 - (abs(yaw_error_deg) / 35.0))
+            vx *= scale
 
-            # Проектуємо лінійну швидкість строго на магнітний курс (hdg)
             target_heading_rad = math.radians(target_heading)
             vn = vx * math.cos(target_heading_rad)
             ve = vx * math.sin(target_heading_rad)
             
-            # Передаємо -vz для компенсації інвертованої осі Z (NED)
             await drone.set_velocity(vn, ve, -vz, yaw_deg=target_heading)
             await asyncio.sleep(0.1)
             
