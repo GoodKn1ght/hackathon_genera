@@ -47,7 +47,7 @@ def camera_loop(drones: list, shutdown: threading.Event):
     static_cy = cam_height / 2.0
     
     fy_pixels = 554.26  
-    target_area = 250.0  
+    target_area = 350.0  
     
     # [НОВЕ] Рахуємо корінь бажаної площі один раз для оптимізації
     sqrt_target_area = math.sqrt(target_area)
@@ -147,6 +147,7 @@ def camera_loop(drones: list, shutdown: threading.Event):
 
 
 async def leader_mission(drone: Drone, stop_event: asyncio.Event, shutdown: asyncio.Event):
+    """Асинхронний траєкторний маршрут з плавними поворотами (Слалом / S-подібна крива)"""
     try:
         print("Leader (Drone 0): waiting 20s for EKF2 & GPS lock...")
         await asyncio.sleep(20)
@@ -158,18 +159,47 @@ async def leader_mission(drone: Drone, stop_event: asyncio.Event, shutdown: asyn
         await asyncio.sleep(10)
         await drone.start_offboard()
         
-        print("Leader (Drone 0): Executing circular trajectory...")
-        current_heading = await drone.heading()
+        # Фіксуємо базовий напрямок руху
+        base_yaw = await drone.heading()
+        print("Leader (Drone 0): Starting smooth slalom trajectory...")
         
+        start_time = time.time()
         while not stop_event.is_set() and not shutdown.is_set():
-            current_heading = (current_heading + 2.5) % 360.0  
-            yaw_rad = math.radians(current_heading)
+            # Рахуємо чистий час польоту від початку місії
+            t = time.time() - start_time
             
-            vn = 1.4 * math.cos(yaw_rad)
-            ve = 1.4 * math.sin(yaw_rad)
+            # --- ПАРАМЕТРИ ПЛАВНОЇ ТРАЄКТОРІЇ ---
+            # Амплітуда відхилення носа вліво/вправо (в градусах)
+            amplitude_deg = 40.0  
+            # Період повного коливання вліво-вправо (в секундах)
+            period = 10.0  
             
-            await drone.set_velocity(vn, ve, 0.0, yaw_deg=current_heading)
+            # Частота коливань (омега)
+            omega = (2.0 * math.pi) / period
+            
+            # Динамічне плавне розгойдування курсу за синусоїдою
+            yaw_offset = amplitude_deg * math.sin(omega * t)
+            current_heading = (base_yaw + yaw_offset) % 360.0
+            
+            # Постійна лінійна швидкість руху вперед (м/с)
+            v_forward = 1.3  
+            
+            # Проєктуємо швидкість на світові осі відповідно до плавно зміненого курсу
+            heading_rad = math.radians(current_heading)
+            vn = v_forward * math.cos(heading_rad)
+            ve = v_forward * math.sin(heading_rad)
+            vz = 0.0  # Утримуємо стабільний ешелон висоти
+            
+            # Відправляємо тривимірну команду лінійних швидкостей та кута курсу
+            await drone.set_velocity(vn, ve, vz, yaw_deg=current_heading)
             await asyncio.sleep(0.1)
+            
+        # Зависання в кінці польоту
+        print("Leader (Drone 0): Місію завершено. Зависання.")
+        while not stop_event.is_set() and not shutdown.is_set():
+            await drone.set_velocity(0.0, 0.0, 0.0, yaw_deg=base_yaw)
+            await asyncio.sleep(0.1)
+            
     except Exception as e:
         print(f"Leader Error: {e}")
 
