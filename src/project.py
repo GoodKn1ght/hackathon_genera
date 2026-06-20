@@ -18,8 +18,8 @@ from led_detector import LEDDetector
 from pid import PIDController
 
 SWARM_SIZE = 3
-ALTITUDE = 5.0  
-FLIGHT_DURATION = 60
+ALTITUDE = 1.0  
+FLIGHT_DURATION = 1000
 
 COLOR_MATRIX = {
     1: [1.0, 0.0, 0.0, 1.0],  # Дрон 1 шукає Червоного лідера (0)
@@ -194,7 +194,7 @@ async def leader_mission(drone: Drone, stop_event: asyncio.Event, shutdown: asyn
 async def follower_mission(drone: Drone, drone_id: int, stop_event: asyncio.Event, shutdown: asyncio.Event):
     try:
         print(f"Follower {drone_id}: waiting 20s for EKF2 lock...")
-        await asyncio.sleep(20)
+        await asyncio.sleep(15)
         
         print(f"Follower {drone_id}: arming & takeoff")
         await drone.arm()
@@ -259,7 +259,7 @@ async def main():
         d.set_leds('1111')
 
     tasks = []
-    tasks.append(asyncio.create_task(leader_mission(drones[0], stop_event, shutdown_async)))
+    # tasks.append(asyncio.create_task(leader_mission(drones[0], stop_event, shutdown_async)))
     for i in range(1, SWARM_SIZE):
         tasks.append(asyncio.create_task(follower_mission(drones[i], i, stop_event, shutdown_async)))
 
